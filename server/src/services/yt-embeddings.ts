@@ -1,5 +1,6 @@
 import type { Core } from '@strapi/strapi';
 import * as crypto from 'crypto';
+import { embed, embedMany } from 'ai';
 import { pluginManager } from '../plugin-manager';
 import { chunkTranscript, type Segment } from '../utils/yt-chunker';
 import { extractVideoMetadata, type KeyMoment } from './yt-metadata';
@@ -28,10 +29,10 @@ const ytEmbeddings = ({ strapi }: { strapi: Core.Strapi }) => ({
   // ── Ingest a single transcript ──────────────────────────────────────────────
   async embedTranscript(transcript: TranscriptInput): Promise<{ videoId: string; chunkCount: number; skipped: boolean }> {
     const pool = pluginManager.getPool();
-    const embeddings = pluginManager.getEmbeddings();
-    const embeddingModel = pluginManager.getEmbeddingModel();
+    const embeddingModel = pluginManager.getEmbeddingModel_();
+    const embeddingModelName = pluginManager.getEmbeddingModelName();
 
-    if (!pool || !embeddings) {
+    if (!pool || !embeddingModel) {
       throw new Error('[yt-embed] Plugin manager not initialized');
     }
 
@@ -73,7 +74,7 @@ const ytEmbeddings = ({ strapi }: { strapi: Core.Strapi }) => ({
         transcript.title,
         durationSeconds,
         contentHash,
-        embeddingModel,
+        embeddingModelName,
       ]
     );
 
@@ -117,7 +118,7 @@ const ytEmbeddings = ({ strapi }: { strapi: Core.Strapi }) => ({
       }
 
       // 6. Batch embed all chunks
-      const embeddingVectors = await embeddings.embedDocuments(chunks.map(c => c.text));
+      const { embeddings: embeddingVectors } = await embedMany({ model: embeddingModel, values: chunks.map(c => c.text) });
 
       // 7. Insert chunks
       const insertedIds: string[] = [];
@@ -177,16 +178,16 @@ const ytEmbeddings = ({ strapi }: { strapi: Core.Strapi }) => ({
     contextWindowSeconds?: number;
   } = {}) {
     const pool = pluginManager.getPool();
-    const embeddingsClient = pluginManager.getEmbeddings();
+    const embeddingModel = pluginManager.getEmbeddingModel_();
 
-    if (!pool || !embeddingsClient) {
+    if (!pool || !embeddingModel) {
       throw new Error('[yt-embed] Plugin manager not initialized');
     }
 
     const { limit = 5, minSimilarity = 0.2, contextWindowSeconds = 30 } = options;
 
     // Embed the query
-    const queryVector = await embeddingsClient.embedQuery(query);
+    const { embedding: queryVector } = await embed({ model: embeddingModel, value: query });
     const vectorStr = `[${queryVector.join(',')}]`;
 
     // Build parameterized query with optional filters

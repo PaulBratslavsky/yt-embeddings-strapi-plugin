@@ -1,6 +1,7 @@
 import type { Core } from "@strapi/strapi";
+import { generateText } from "ai";
+import { createOpenAI } from "@ai-sdk/openai";
 import { pluginManager } from "../plugin-manager";
-import { ChatPromptTemplate } from "@langchain/core/prompts";
 
 const PLUGIN_ID = "yt-embeddings-strapi-plugin";
 const YT_TRANSCRIPT_UID = "plugin::yt-transcript-strapi-plugin.transcript";
@@ -162,11 +163,11 @@ const controller = ({ strapi }: { strapi: Core.Strapi }) => ({
         `Video: "${r.title}" (${r.deepLink})\nTopics: ${(r.topics || []).join(', ')}\n\n${r.contextText || r.chunkText}`
       ).join('\n\n---\n\n');
 
-      // Use plugin manager's chat LLM for RAG answer
-      const chat = pluginManager.getChat();
+      // Use AI SDK for RAG answer
+      const config = strapi.config.get('plugin::yt-embeddings-strapi-plugin') as any;
 
-      if (!chat) {
-        // No chat model — return raw results
+      if (!config?.openAIApiKey) {
+        // No API key — return raw results
         ctx.body = {
           text: ytResults.map((r: any) => `**${r.title}** (${r.deepLink})\n${r.chunkText}`).join('\n\n'),
           sourceDocuments: ytResults.map((r: any) => ({
@@ -177,21 +178,20 @@ const controller = ({ strapi }: { strapi: Core.Strapi }) => ({
         return;
       }
 
-      const prompt = ChatPromptTemplate.fromMessages([
-        ["system", `You are a helpful assistant that answers questions based on YouTube transcript content.
+      const openai = createOpenAI({ apiKey: config.openAIApiKey });
+      const { text } = await generateText({
+        model: openai('gpt-4o-mini'),
+        system: `You are a helpful assistant that answers questions based on YouTube transcript content.
 Include timestamps and video links when relevant. Be concise and accurate.
 If you cannot find the answer in the context, say so.
 
 Context:
-{context}`],
-        ["human", "{question}"],
-      ]);
-
-      const chain = prompt.pipe(chat);
-      const response = await chain.invoke({ context, question: query });
+${context}`,
+        prompt: query,
+      });
 
       ctx.body = {
-        text: response.content,
+        text,
         sourceDocuments: ytResults.map((r: any) => ({
           pageContent: r.chunkText,
           metadata: { id: r.videoId, title: r.title, deepLink: r.deepLink },

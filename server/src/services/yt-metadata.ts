@@ -1,4 +1,5 @@
-import { ChatOpenAI } from '@langchain/openai';
+import { generateObject } from 'ai';
+import { createOpenAI } from '@ai-sdk/openai';
 import { z } from 'zod';
 
 export interface KeyMoment {
@@ -31,12 +32,7 @@ export async function extractVideoMetadata(
   durationSeconds: number,
   openAIApiKey: string,
 ): Promise<VideoMetadata> {
-  const llm = new ChatOpenAI({
-    modelName: 'gpt-4o-mini',
-    temperature: 0,
-    openAIApiKey,
-  });
-  const structured = llm.withStructuredOutput(metadataSchema);
+  const openai = createOpenAI({ apiKey: openAIApiKey });
 
   // For long transcripts, sample first + last 2000 words
   const words = fullTranscript.split(/\s+/);
@@ -44,7 +40,11 @@ export async function extractVideoMetadata(
     ? [...words.slice(0, 2000), '...', ...words.slice(-2000)].join(' ')
     : fullTranscript;
 
-  const result = await structured.invoke(`
+  const { object } = await generateObject({
+    model: openai('gpt-4o-mini'),
+    schema: metadataSchema,
+    temperature: 0,
+    prompt: `
 Video title: "${title}"
 Duration: ${Math.floor(durationSeconds / 60)} minutes
 
@@ -58,12 +58,13 @@ Extract:
 - summary: 2-3 sentences describing what the video teaches or argues
 - keyMoments: the 5-8 most important moments, with approximate start time in seconds
 - language: ISO 639-1 language code of the transcript
-  `.trim());
+    `.trim(),
+  });
 
   return {
-    topics: result.topics ?? [],
-    summary: result.summary ?? '',
-    keyMoments: (result.keyMoments ?? []) as KeyMoment[],
-    language: result.language ?? 'en',
+    topics: object.topics ?? [],
+    summary: object.summary ?? '',
+    keyMoments: (object.keyMoments ?? []) as KeyMoment[],
+    language: object.language ?? 'en',
   };
 }

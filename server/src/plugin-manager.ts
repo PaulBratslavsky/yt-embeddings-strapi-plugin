@@ -1,12 +1,6 @@
-import { OpenAIEmbeddings, ChatOpenAI } from "@langchain/openai";
-import { PGVectorStore } from "@langchain/community/vectorstores/pgvector";
-import { Document } from "@langchain/core/documents";
-import { StringOutputParser } from "@langchain/core/output_parsers";
-import { ChatPromptTemplate } from "@langchain/core/prompts";
-import {
-  RunnableSequence,
-  RunnablePassthrough,
-} from "@langchain/core/runnables";
+import { embed, embedMany, generateText } from "ai";
+import { createOpenAI } from "@ai-sdk/openai";
+import type { EmbeddingModel, LanguageModel } from "ai";
 import { Pool, PoolConfig } from "pg";
 import {
   EMBEDDING_MODELS,
@@ -34,26 +28,15 @@ interface CreateEmbeddingResult {
 
 interface QueryResponse {
   text: string;
-  sourceDocuments: Document[];
+  sourceDocuments: Array<{ pageContent: string; metadata: any }>;
 }
 
 class PluginManager {
-  private embeddings: OpenAIEmbeddings | null = null;
-  private chat: ChatOpenAI | null = null;
+  private embeddingModel_: EmbeddingModel<string> | null = null;
+  private chatModel: LanguageModel | null = null;
   private pool: Pool | null = null;
-  private embeddingModel: EmbeddingModelName = "text-embedding-3-small";
+  private embeddingModelName: EmbeddingModelName = "text-embedding-3-small";
   private dimensions: number = 1536;
-  private vectorStoreConfig: {
-    pool: Pool;
-    tableName: string;
-    columns: {
-      idColumnName: string;
-      vectorColumnName: string;
-      contentColumnName: string;
-      metadataColumnName: string;
-    };
-    distanceStrategy: "cosine" | "innerProduct" | "euclidean";
-  } | null = null;
 
   async initializePool(connectionString: string): Promise<Pool> {
     console.log("Initializing Neon DB Pool");
@@ -133,81 +116,49 @@ class PluginManager {
     }
   }
 
-  async initializeEmbeddings(openAIApiKey: string): Promise<OpenAIEmbeddings> {
-    console.log(`Initializing OpenAI Embeddings (model: ${this.embeddingModel})`);
+  private initializeEmbeddings(openai: ReturnType<typeof createOpenAI>): void {
+    console.log(`Initializing OpenAI Embeddings (model: ${this.embeddingModelName})`);
 
-    if (this.embeddings) return this.embeddings;
+    if (this.embeddingModel_) return;
 
-    try {
-      this.embeddings = new OpenAIEmbeddings({
-        openAIApiKey,
-        modelName: this.embeddingModel,
-        dimensions: this.dimensions,
-      });
-
-      return this.embeddings;
-    } catch (error) {
-      console.error(`Failed to initialize Embeddings: ${error}`);
-      throw new Error(`Failed to initialize Embeddings: ${error}`);
-    }
+    this.embeddingModel_ = openai.embedding(this.embeddingModelName, {
+      dimensions: this.dimensions,
+    });
   }
 
-  async initializeChat(openAIApiKey: string): Promise<ChatOpenAI> {
+  private initializeChat(openai: ReturnType<typeof createOpenAI>): void {
     console.log("Initializing Chat Model");
 
-    if (this.chat) return this.chat;
+    if (this.chatModel) return;
 
-    try {
-      this.chat = new ChatOpenAI({
-        modelName: "gpt-4o-mini",
-        temperature: 0.7,
-        openAIApiKey,
-      });
-
-      return this.chat;
-    } catch (error) {
-      console.error(`Failed to initialize Chat: ${error}`);
-      throw new Error(`Failed to initialize Chat: ${error}`);
-    }
+    this.chatModel = openai("gpt-4o-mini");
   }
 
   async initialize(config: PluginConfig): Promise<void> {
     // Set embedding model and dimensions from config
     const model = config.embeddingModel || "text-embedding-3-small";
     if (EMBEDDING_MODELS[model]) {
-      this.embeddingModel = model;
+      this.embeddingModelName = model;
       this.dimensions = EMBEDDING_MODELS[model].dimensions;
     } else {
       console.warn(`Invalid embedding model "${model}", using default`);
-      this.embeddingModel = "text-embedding-3-small";
+      this.embeddingModelName = "text-embedding-3-small";
       this.dimensions = EMBEDDING_MODELS["text-embedding-3-small"].dimensions;
     }
 
-    console.log(`Using embedding model: ${this.embeddingModel} (${this.dimensions} dimensions)`);
+    console.log(`Using embedding model: ${this.embeddingModelName} (${this.dimensions} dimensions)`);
 
     await this.initializePool(config.neonConnectionString);
-    await this.initializeEmbeddings(config.openAIApiKey);
-    await this.initializeChat(config.openAIApiKey);
 
-    if (this.pool) {
-      this.vectorStoreConfig = {
-        pool: this.pool,
-        tableName: "embeddings_documents",
-        columns: {
-          idColumnName: "id",
-          vectorColumnName: "embedding",
-          contentColumnName: "content",
-          metadataColumnName: "metadata",
-        },
-        distanceStrategy: "cosine",
-      };
-    }
+    const openai = createOpenAI({ apiKey: config.openAIApiKey });
+    this.initializeEmbeddings(openai);
+    this.initializeChat(openai);
 
     console.log("Plugin Manager Initialization Complete");
   }
 
   async createEmbedding(docData: EmbeddingDocument): Promise<CreateEmbeddingResult> {
-    if (!this.embeddings || !this.vectorStoreConfig || !this.pool) {
+    if (!this.embeddingModel_ || !this.pool) {
       throw new Error("Plugin manager not initialized");
     }
 
@@ -217,7 +168,10 @@ class PluginManager {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         // Generate the embedding vector (single API call)
-        const embeddingVector = await this.embeddings.embedQuery(docData.content);
+        const { embedding: embeddingVector } = await embed({
+          model: this.embeddingModel_,
+          value: docData.content,
+        });
 
         // Insert directly into DB with pre-computed embedding (no second API call)
         const metadata = {
@@ -277,77 +231,74 @@ class PluginManager {
   }
 
   async queryEmbedding(query: string): Promise<QueryResponse> {
-    if (!this.embeddings || !this.chat || !this.vectorStoreConfig) {
+    if (!this.embeddingModel_ || !this.chatModel || !this.pool) {
       throw new Error("Plugin manager not initialized");
     }
 
     try {
-      const vectorStore = await PGVectorStore.initialize(
-        this.embeddings,
-        this.vectorStoreConfig
-      );
+      // Embed the query
+      const { embedding: queryVector } = await embed({
+        model: this.embeddingModel_,
+        value: query,
+      });
+      const vectorStr = `[${queryVector.join(",")}]`;
 
-      // Use similaritySearchWithScore to get relevance scores
-      // Retrieve more documents initially, then filter by score
-      const resultsWithScores = await vectorStore.similaritySearchWithScore(query, 6);
+      // Similarity search via raw SQL (cosine distance)
+      const results = await this.pool.query(`
+        SELECT
+          content,
+          metadata,
+          1 - (embedding <=> $1::vector) AS similarity
+        FROM embeddings_documents
+        WHERE 1 - (embedding <=> $1::vector) > 0
+        ORDER BY embedding <=> $1::vector
+        LIMIT 6
+      `, [vectorStr]);
 
       console.log(`[queryEmbedding] Query: "${query}"`);
-      console.log(`[queryEmbedding] Found ${resultsWithScores.length} results:`);
-      resultsWithScores.forEach(([doc, score], i) => {
-        console.log(`  ${i + 1}. Score: ${score.toFixed(4)}, Title: ${doc.metadata?.title || 'N/A'}`);
+      console.log(`[queryEmbedding] Found ${results.rows.length} results:`);
+      results.rows.forEach((row: any, i: number) => {
+        console.log(`  ${i + 1}. Score: ${row.similarity.toFixed(4)}, Title: ${row.metadata?.title || 'N/A'}`);
       });
 
-      // Filter by similarity threshold (cosine distance: 0 = identical, higher = more different)
-      // Increase threshold to allow more results
+      // Filter by similarity threshold
       const SIMILARITY_THRESHOLD = 1.0;
-      const relevantResults = resultsWithScores.filter(([_, score]) => score < SIMILARITY_THRESHOLD);
+      const relevantResults = results.rows.filter((row: any) => row.similarity < SIMILARITY_THRESHOLD);
 
       console.log(`[queryEmbedding] ${relevantResults.length} results passed threshold (< ${SIMILARITY_THRESHOLD})`);
 
       // Take top 3 most relevant documents for context
       const topResults = relevantResults.slice(0, 3);
-      const sourceDocuments = topResults.map(([doc]) => doc);
+      const sourceDocuments = topResults.map((row: any) => ({
+        pageContent: row.content,
+        metadata: row.metadata,
+      }));
 
       // Only show the single best matching source to the user
-      const bestMatchForDisplay = topResults.length > 0 ? [topResults[0][0]] : [];
+      const bestMatchForDisplay = topResults.length > 0
+        ? [{ pageContent: topResults[0].content, metadata: topResults[0].metadata }]
+        : [];
 
-      // Format documents for context - include title from metadata
-      const formatDocs = (docs: Document[]): string => {
-        return docs.map((doc) => {
-          const title = doc.metadata?.title ? `Title: ${doc.metadata.title}\n` : '';
-          return `${title}${doc.pageContent}`;
-        }).join("\n\n");
-      };
+      // Format documents for context
+      const context = sourceDocuments.map((doc) => {
+        const title = doc.metadata?.title ? `Title: ${doc.metadata.title}\n` : '';
+        return `${title}${doc.pageContent}`;
+      }).join("\n\n");
 
-      // Create RAG prompt
-      const ragPrompt = ChatPromptTemplate.fromMessages([
-        [
-          "system",
-          `You are a helpful assistant that answers questions based on the provided context.
+      // RAG via generateText
+      const { text } = await generateText({
+        model: this.chatModel,
+        system: `You are a helpful assistant that answers questions based on the provided context.
 If you cannot find the answer in the context, say so. Be concise and accurate.
 
 Context:
-{context}`,
-        ],
-        ["human", "{question}"],
-      ]);
-
-      // Build LCEL chain - use all relevant docs for context
-      const ragChain = RunnableSequence.from([
-        {
-          context: async () => formatDocs(sourceDocuments),
-          question: new RunnablePassthrough(),
-        },
-        ragPrompt,
-        this.chat,
-        new StringOutputParser(),
-      ]);
-
-      const text = await ragChain.invoke(query);
+${context}`,
+        prompt: query,
+      });
 
       return {
         text,
-        sourceDocuments: bestMatchForDisplay, // Only return best match to display
+        sourceDocuments: bestMatchForDisplay,
       };
     } catch (error) {
       console.error(`Failed to query embeddings: ${error}`);
@@ -358,18 +309,29 @@ Context:
   async similaritySearch(
     query: string,
     k: number = 4
-  ): Promise<Document[]> {
-    if (!this.embeddings || !this.vectorStoreConfig) {
+  ): Promise<Array<{ pageContent: string; metadata: any }>> {
+    if (!this.embeddingModel_ || !this.pool) {
       throw new Error("Plugin manager not initialized");
     }
 
     try {
-      const vectorStore = await PGVectorStore.initialize(
-        this.embeddings,
-        this.vectorStoreConfig
-      );
+      const { embedding: queryVector } = await embed({
+        model: this.embeddingModel_,
+        value: query,
+      });
+      const vectorStr = `[${queryVector.join(",")}]`;
 
-      return await vectorStore.similaritySearch(query, k);
+      const results = await this.pool.query(`
+        SELECT content, metadata
+        FROM embeddings_documents
+        ORDER BY embedding <=> $1::vector
+        LIMIT $2
+      `, [vectorStr, k]);
+
+      return results.rows.map((row: any) => ({
+        pageContent: row.content,
+        metadata: row.metadata,
+      }));
     } catch (error) {
       console.error(`Failed to perform similarity search: ${error}`);
       throw new Error(`Failed to perform similarity search: ${error}`);
@@ -377,7 +339,7 @@ Context:
   }
 
   isInitialized(): boolean {
-    return !!(this.embeddings && this.chat && this.pool);
+    return !!(this.embeddingModel_ && this.chatModel && this.pool);
   }
 
   /**
@@ -446,16 +408,12 @@ Context:
     return this.pool;
   }
 
-  getEmbeddings(): OpenAIEmbeddings | null {
-    return this.embeddings;
+  getEmbeddingModel_(): EmbeddingModel<string> | null {
+    return this.embeddingModel_;
   }
 
-  getEmbeddingModel(): EmbeddingModelName {
-    return this.embeddingModel;
-  }
-
-  getChat(): ChatOpenAI | null {
-    return this.chat;
+  getEmbeddingModelName(): EmbeddingModelName {
+    return this.embeddingModelName;
   }
 
   async destroy(): Promise<void> {
@@ -463,9 +421,8 @@ Context:
       await this.pool.end();
       this.pool = null;
     }
-    this.embeddings = null;
-    this.chat = null;
-    this.vectorStoreConfig = null;
+    this.embeddingModel_ = null;
+    this.chatModel = null;
   }
 
   /**
