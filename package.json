@@ -1,6 +1,6 @@
 {
   "name": "yt-embeddings-strapi-plugin",
-  "version": "0.2.2",
+  "version": "0.0.1",
   "description": "Strapi v5 plugin for vector embeddings with OpenAI and Neon PostgreSQL. Enables semantic search, RAG chat, and MCP (Model Context Protocol) integration.",
   "keywords": [
     "strapi",
