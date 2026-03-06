@@ -1,0 +1,106 @@
+{
+  "name": "yt-embeddings-strapi-plugin",
+  "version": "0.2.2",
+  "description": "Strapi v5 plugin for vector embeddings with OpenAI and Neon PostgreSQL. Enables semantic search, RAG chat, and MCP (Model Context Protocol) integration.",
+  "keywords": [
+    "strapi",
+    "strapi-plugin",
+    "embeddings",
+    "vector-search",
+    "rag",
+    "openai",
+    "neon",
+    "pgvector",
+    "mcp",
+    "semantic-search"
+  ],
+  "license": "MIT",
+  "author": "Paul Bratslavsky <codingafterthirty@gmail.com>",
+  "homepage": "https://github.com/PaulBrats662/strapi-content-embeddings#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PaulBratslavsky/strapi-content-embeddings.git"
+  },
+  "bugs": {
+    "url": "https://github.com/PaulBratslavsky/strapi-content-embeddings/issues"
+  },
+  "type": "commonjs",
+  "overrides": {
+    "@langchain/core": "^1.1.31"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    "./strapi-admin": {
+      "types": "./dist/admin/src/index.d.tsx",
+      "source": "./admin/src/index.tsx",
+      "import": "./dist/admin/index.mjs",
+      "require": "./dist/admin/index.js",
+      "default": "./dist/admin/index.js"
+    },
+    "./strapi-server": {
+      "types": "./dist/server/src/index.d.ts",
+      "source": "./server/src/index.ts",
+      "import": "./dist/server/index.mjs",
+      "require": "./dist/server/index.js",
+      "default": "./dist/server/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "strapi-plugin build",
+    "setup-db": "node scripts/setup-db.js",
+    "test:ts:back": "run -T tsc -p server/tsconfig.json",
+    "test:ts:front": "run -T tsc -p admin/tsconfig.json",
+    "verify": "strapi-plugin verify",
+    "watch": "strapi-plugin watch",
+    "watch:link": "strapi-plugin watch:link"
+  },
+  "dependencies": {
+    "@langchain/community": "^1.1.2",
+    "@langchain/core": "^1.1.31",
+    "@langchain/openai": "^1.2.1",
+    "@mdxeditor/editor": "^3.52.3",
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "@strapi/design-system": "^2.0.0-rc.12",
+    "@strapi/icons": "^2.0.0-rc.12",
+    "html-to-text": "^9.0.5",
+    "langchain": "^1.2.4",
+    "pg": "^8.13.1",
+    "remove-markdown": "^0.5.5",
+    "qs": "^6.13.1",
+    "react-intl": "^6.8.4",
+    "react-markdown": "^10.1.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@strapi/sdk-plugin": "^5.2.7",
+    "@strapi/strapi": "^5.2.0",
+    "@strapi/typescript-utils": "^5.2.0",
+    "@types/pg": "^8.11.10",
+    "@types/qs": "^6.9.17",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "prettier": "^3.3.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.27.0",
+    "styled-components": "^6.1.13",
+    "typescript": "^5.6.3"
+  },
+  "peerDependencies": {
+    "@strapi/sdk-plugin": "^5.2.7",
+    "@strapi/strapi": "^5.2.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.27.0",
+    "styled-components": "^6.1.13"
+  },
+  "strapi": {
+    "kind": "plugin",
+    "name": "yt-embeddings-strapi-plugin",
+    "displayName": "YT Embeddings",
+    "description": "YouTube transcript vector embeddings with semantic search, RAG chat, and MCP integration."
+  }
+}
