@@ -6,7 +6,7 @@ export const SearchYtKnowledgeSchema = z.object({
   videoId: z.string().optional(),
   topics: z.array(z.string()).optional(),
   contextWindowSeconds: z.number().min(0).optional().default(30),
-  minSimilarity: z.number().min(0).max(1).optional().default(0.65),
+  minSimilarity: z.number().min(0).max(1).optional().default(0.3),
 });
 
 export const GetVideoTranscriptRangeSchema = z.object({

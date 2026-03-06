@@ -62,7 +62,11 @@ export default function VideoDetails() {
       get(`/${PLUGIN_ID}/yt/videos/${videoId}/chunks`),
     ])
       .then(([videoRes, chunksRes]) => {
-        setVideo(videoRes?.data?.data || videoRes?.data || null);
+        const v = videoRes?.data?.data || videoRes?.data || null;
+        if (v && typeof v.key_moments === 'string') {
+          try { v.key_moments = JSON.parse(v.key_moments); } catch { v.key_moments = []; }
+        }
+        setVideo(v);
         setChunks(chunksRes?.data?.data || chunksRes?.data || []);
       })
       .catch((err) => console.error("Failed to load video:", err))

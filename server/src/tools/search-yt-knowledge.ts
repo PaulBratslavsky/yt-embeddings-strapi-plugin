@@ -10,7 +10,7 @@ function formatTime(seconds: number): string {
 export const searchYtKnowledgeTool = {
   name: 'searchYtKnowledge',
   description:
-    'Semantically search YouTube video transcripts. Returns relevant passages with timestamps, deep links, video topics, and summary.',
+    'Semantically search YouTube video transcripts. Returns relevant passages with timestamps, deep links, video topics, and summary. IMPORTANT: After receiving results, use the contextText to directly answer the user\'s question. Cite the video title, timestamp, and deep link. Do not just list results — synthesize an answer from the transcript content.',
   schema: SearchYtKnowledgeSchema,
   execute: async (args: unknown, strapi: Core.Strapi) => {
     const validated = SearchYtKnowledgeSchema.parse(args);

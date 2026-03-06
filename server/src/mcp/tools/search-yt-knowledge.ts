@@ -8,7 +8,7 @@ function formatTime(seconds: number): string {
 
 export const searchYtKnowledgeMcpTool = {
   name: 'search_yt_knowledge',
-  description: 'Semantically search YouTube video transcripts. Returns relevant passages with timestamps, deep links, video topics, and summary.',
+  description: 'Semantically search YouTube video transcripts. Returns relevant passages with timestamps, deep links, video topics, and summary. IMPORTANT: After receiving results, use the contextText to directly answer the user\'s question. Cite the video title, timestamp, and deep link. Do not just list results — synthesize an answer from the transcript content.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -58,7 +58,7 @@ export async function handleSearchYtKnowledge(
     .service('ytEmbeddings')
     .search(args.query, {
       limit:                args.limit ?? 5,
-      minSimilarity:        args.minSimilarity ?? 0.65,
+      minSimilarity:        args.minSimilarity ?? 0.3,
       videoId:              args.videoId,
       topics:               args.topics,
       contextWindowSeconds: args.contextWindowSeconds ?? 30,

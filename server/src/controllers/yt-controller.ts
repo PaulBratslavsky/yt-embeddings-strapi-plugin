@@ -94,7 +94,7 @@ const ytController = ({ strapi }: { strapi: Core.Strapi }) => ({
 
       const result = await strapi.plugin(PLUGIN_ID).service('ytEmbeddings').search(q, {
         limit: limit ? parseInt(limit, 10) : 5,
-        minSimilarity: minSimilarity ? parseFloat(minSimilarity) : 0.65,
+        minSimilarity: minSimilarity ? parseFloat(minSimilarity) : 0.3,
         videoId,
         topics: topics ? topics.split(',') : undefined,
         contextWindowSeconds: contextWindowSeconds ? parseInt(contextWindowSeconds, 10) : 30,

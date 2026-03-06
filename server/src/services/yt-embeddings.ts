@@ -187,7 +187,9 @@ const ytEmbeddings = ({ strapi }: { strapi: Core.Strapi }) => ({
     const { limit = 5, minSimilarity = 0.2, contextWindowSeconds = 30 } = options;
 
     // Embed the query
+    console.log(`[yt-embed search] Embedding query: "${query}" with model`);
     const { embedding: queryVector } = await embed({ model: embeddingModel, value: query });
+    console.log(`[yt-embed search] Got embedding vector, length: ${queryVector.length}`);
     const vectorStr = `[${queryVector.join(',')}]`;
 
     // Build parameterized query with optional filters
@@ -224,6 +226,10 @@ const ytEmbeddings = ({ strapi }: { strapi: Core.Strapi }) => ({
       LIMIT $3
     `, params);
 
+    console.log(`[yt-embed search] Query returned ${rows.rows.length} rows (minSimilarity: ${minSimilarity})`);
+    if (rows.rows.length > 0) {
+      console.log(`[yt-embed search] Top similarity: ${rows.rows[0].similarity}`);
+    }
     if (!rows.rows.length) return [];
 
     // Deduplicate adjacent chunks from same video
